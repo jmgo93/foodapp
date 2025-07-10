@@ -50,6 +50,18 @@
   </div>
     <h4> Recetas</h4>
   <input id="search" placeholder="Buscar…">
+    <div style="margin-top:4px;display:flex;gap:4px;">
+    <select id="sort-field">
+      <option value="kcal">kcal</option>
+      <option value="p">Prot</option>
+      <option value="c">Carb</option>
+      <option value="f">Grasa</option>
+    </select>
+    <select id="sort-order">
+      <option value="asc">Asc</option>
+      <option value="desc">Desc</option>
+    </select>
+  </div>
   <div id="card-bank"></div>
 </aside>
 <section id="planner">
@@ -91,6 +103,10 @@ document.addEventListener('DOMContentLoaded', () => {
 const baseCalInput = document.getElementById('base-cal');
 const summaryContainer = document.getElementById('summary');
 baseCalInput.addEventListener('input', updateSummary);
+    const searchInput = document.getElementById('search');
+  const sortFieldSelect = document.getElementById('sort-field');
+  const sortOrderSelect = document.getElementById('sort-order');
+
 
   const activityMap = {Sed:1.2, Lig:1.375, Mod:1.55, Act:1.725, Ext:1.9};
   let DATA = [], people = [];
@@ -101,7 +117,7 @@ baseCalInput.addEventListener('input', updateSummary);
       const [id,title,kcal,p,c,f,types,ing] = parts;
       return { id:+id, title, kcal:+kcal, p:+p, c:+c, f:+f, types:types.split('|'), ing };
     });
-    renderCards(DATA);
+     updateCards();
   }
   loadCSV(`id,title,kcal,p,c,f,types,ing
 1752139058714,Huevos revueltos,93,7.8,0.7,6.6,huevo,"Huevo(60g)"
@@ -419,10 +435,17 @@ baseCalInput.addEventListener('input', updateSummary);
       c.onclick = () => alert(DATA.find(x=>x.id==c.dataset.id).ing);
     });
   }
-  document.getElementById('search').oninput = function() {
-    const q = this.value.toLowerCase();
-    renderCards(DATA.filter(x=>x.title.toLowerCase().includes(q)));
-  };
+ function updateCards() {
+    const q = searchInput.value.toLowerCase();
+    const field = sortFieldSelect.value;
+    const order = sortOrderSelect.value;
+    let list = DATA.filter(x=>x.title.toLowerCase().includes(q));
+    list.sort((a,b)=>order==='asc'?a[field]-b[field]:b[field]-a[field]);
+    renderCards(list);
+  }
+  searchInput.oninput = updateCards;
+  sortFieldSelect.onchange = updateCards;
+  sortOrderSelect.onchange = updateCards;
 
   const MEALS = ['Desayuno','Comida','Snack','Cena'];
   MEALS.forEach(meal => {
