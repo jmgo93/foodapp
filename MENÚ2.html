@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Planificador de Menú Semanal</title>
+  <style>
+    *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+    body{margin:0;display:flex;height:100vh}
+    /* Sidebar */
+    #sidebar{width:300px;border-right:1px solid #ccc;display:flex;flex-direction:column}
+    #participants{padding:8px;border-bottom:1px solid #ccc;background:#f9f9f9}
+    #participants table{width:100%;border-collapse:collapse;font-size:.75rem}
+    #participants th,#participants td{border:none;padding:2px;text-align:center}
+    #add-person{width:100%;margin-top:4px}
+    #search{width:100%;padding:4px;border:none;border-bottom:1px solid #ccc}
+    #card-bank{flex:1;overflow-y:auto;padding:8px}
+    #trash{padding:8px;text-align:center;background:#ffe9e9;color:#c00;cursor:pointer;font-size:.85rem}
+    .card{border:1px solid #888;border-radius:6px;padding:6px;margin-bottom:6px;background:#fff;cursor:grab;font-size:.75rem;overflow:hidden}
+    .card-header{display:flex;align-items:center;gap:4px}
+    .macros{font-size:.65rem;color:#555;margin-top:4px;display:flex;gap:6px;flex-wrap:wrap}
+    .macros span{display:inline-block}
+    /* Planner */
+    #planner{flex:1;display:flex;flex-direction:column}
+    table{border-collapse:collapse;width:100%;table-layout:fixed}
+    th,td{border:1px solid #ccc;padding:4px;vertical-align:top;font-size:.75rem;width:12.5%}
+    th{background:#f0f0f0;text-align:center}
+    .cell-inner{min-height:60px;display:flex;flex-direction:column;gap:2px}
+    .over{outline:2px dashed #1E90FF}
+    .chip{border:1px solid #555;border-radius:4px;padding:4px;margin:4px 0;background:#eef;font-size:.75rem;display:flex;flex-direction:column;gap:4px;overflow:visible;white-space:normal}
+    /* Summary Bars */
+    .bar-container{display:flex;flex-direction:column;gap:4px;width:100%}
+    .bar{height:14px;border-radius:4px;background:#ddd;position:relative;overflow:hidden}
+    .bar div{height:100%;border-radius:4px 0 0 4px;position:relative}
+    .bar-cal div{background:#1E90FF}
+    .bar-prot div{background:red}
+    .bar-carb div{background:gold}
+    .bar-fat div{background:green}
+    .bar-label{position:absolute;left:50%;top:0;color:black;font-size:.6rem;padding:0 4px;transform:translate(-50%,0);white-space:nowrap;font-weight:bold}
+  </style>
+</head>
+<body>
+<aside id="sidebar">
+  <div id="participants">
+    <h4>Usuarios</h4>
+    <table>
+      <thead><tr><th>Nom</th><th>Kg</th><th>cm</th><th>Edad</th><th>Sx</th><th>Act</th><th></th></tr></thead>
+      <tbody id="people-body"></tbody>
+    </table>
+    <button id="add-person">+ Añadir</button>
+  </div>
+    <h4> Recetas</h4>
+  <input id="search" placeholder="Buscar…">
+  <div id="card-bank"></div>
+</aside>
+<section id="planner">
+  <table>
+    <thead><tr><th>Comida</th><th>Lun</th><th>Mar</th><th>Mié</th><th>Jue</th><th>Vie</th><th>Sáb</th><th>Dom</th></tr></thead>
+    <tbody id="grid-body"></tbody>
+  </table>
+  <div style="padding:8px;border-top:1px solid #ccc;">
+    <label for="base-cal" style="margin:4px;">Calorías objetivo de referencia:</label>
+    <input type="number" id="base-cal" value="2000" style="width:80px;padding:2px;margin-right:8px;" />
+  </div>
+  <div id="summary"></div>
+</section>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // Emoticonos como iconos de alimento
+  const iconMap = {
+    legumbre: '🫘',
+    verdura: '🥬',
+    aceite: '🏺',
+    carne: '🍖',
+    'carne roja': '🥩',
+    'carne blanca': '🍗',
+    pescado: '🎣',
+    'pescado azul': '🐟',
+    huevo: '🥚',
+    fruta: '🍎',
+    lacteo: '🥛',
+    cereal: '🌾',
+    'frutos secos': '🥜',
+    'soja': '🫛',
+    chocolate: '🍫',
+    bebida: '☕',
+    proteína: '🥤',
+    tubérculo: '🥔',
+    marisco: '🦐'
+  };
+  const iconFor = type => iconMap[type] || '❓';  // fallback seguro
+const baseCalInput = document.getElementById('base-cal');
+const summaryContainer = document.getElementById('summary');
+baseCalInput.addEventListener('input', updateSummary);
+
+  const activityMap = {Sed:1.2, Lig:1.375, Mod:1.55, Act:1.725, Ext:1.9};
+  let DATA = [], people = [];
+
+  function loadCSV(text) {
+    DATA = text.trim().split('\n').slice(1).map(row => {
+      const parts = row.match(/(?:(?:"[^"]*")|[^,])+/g).map(s => s.replace(/^"|"$/g, ''));
+      const [id,title,kcal,p,c,f,types,ing] = parts;
+      return { id:+id, title, kcal:+kcal, p:+p, c:+c, f:+f, types:types.split('|'), ing };
+    });
+    renderCards(DATA);
+  }
+  loadCSV(`id,title,kcal,p,c,f,types,ing
+1752139058714,Huevos revueltos,93,7.8,0.7,6.6,huevo,"Huevo(60g)"
+1,Tostada integral con tomate,163.0,4.0,24.0,6.7,cereal|verdura|aceite,"1 rebanada pan integral (40g), tomate rallado (100g), 1 cdita aceite de oliva (5g)"
+2,Yogur natural,75.0,4.0,4.5,4.0,lacteo,"125g yogur natural"
+3,Avena con manzana y canela,195.0,5.4,35.3,3.1,cereal|fruta,"40g avena, ½ manzana (75g), canela"
+4,Tortilla francesa,188.0,12.6,1.1,14.8,huevo|aceite,"2 huevos (100g), 5g aceite de oliva"
+5,Pan integral con aguacate,180.0,4.0,24.0,9.0,cereal|aceite|verdura,"1 rebanada pan integral (40g), 50g aguacate"
+6,Smoothie de frutas variadas,131.0,1.6,33.9,0.6,fruta,"100g plátano, 50g fresas, 50g manzana, agua"
+7,Queso fresco con nueces,175.0,11.3,3.7,13.5,lacteo|frutos secos,"80g queso fresco, 15g nueces"
+8,Plátano,107.0,1.3,27.6,0.4,fruta,"120g plátano"
+9,Manzana,78.0,0.5,21.0,0.3,fruta,"150g manzana"
+10,Pera,80.0,0.6,21.0,0.1,fruta,"140g pera"
+11,Huevo duro,77.0,6.3,0.6,5.3,huevo,"1 huevo (50g)"
+12,Almendras,174.0,6.5,3.3,15.3,frutos secos,"30g almendras"
+13,Zanahoria cruda,33.0,0.7,7.5,0.3,verdura,"100g zanahoria"
+14,Chocolate negro (>70%),137.5,1.7,8.3,7.5,chocolate,"25g chocolate negro (>70%)"
+15,Lentejas estofadas,344.0,13.3,28.3,17.2,legumbre|verdura|aceite,"70g lentejas cocidas, 50g verduras, 10g aceite"
+16,Garbanzos guisados,309.6,11.7,31.5,18.1,legumbre|verdura|aceite,"150g garbanzos cocidos, 50g verduras, 10g aceite"
+17,Pollo al curry,298.0,24.0,8.0,16.0,carne|verdura|aceite,"120g pollo, 50g cebolla, 10g aceite"
+18,Pechuga de pavo a la plancha,105.0,22.0,1.0,1.0,carne blanca,"100g pechuga de pavo"
+19,Salmón a la plancha,208.0,22.0,0.0,13.0,pescado azul,"100g salmón"
+20,Atún en lata con ensalada,200.0,26.0,4.0,8.0,pescado azul|verdura|aceite,"80g atún, 50g lechuga, 10g aceite"
+21,Arroz integral con verduras,269.5,7.6,54.8,7.6,cereal|verdura|aceite,"150g arroz integral, 50g verduras variadas*, 10g aceite de oliva"
+22,Brócoli hervido con aceite de oliva,52.5,3.4,9.0,4.3,verdura|aceite,"100g brócoli, 10g aceite de oliva"
+23,Ensalada mixta,62.0,2.6,8.7,4.5,verdura|aceite,"50g lechuga, 50g tomate, 50g zanahoria, 10g aceite de oliva"
+24,Filete de ternera a la plancha,250.0,26.0,0.0,16.0,carne roja,"120g filete de ternera"
+25,Pasta integral con tomate,309.0,8.9,59.0,3.2,cereal|verdura|aceite,"100g pasta integral, 50g tomate, 5g aceite de oliva"
+26,Albóndigas de pollo caseras,280.0,20.0,10.0,18.0,carne blanca,"100g carne de pollo, 50g pan rallado, especias"
+27,Guiso de pescado blanco,193.5,21.5,8.5,12.1,pescado|verdura|aceite,"100g pescado blanco, 50g verduras variadas*, 10g aceite de oliva"
+28,Crema de calabaza,61.0,1.5,16.0,5.9,verdura|aceite,"150g calabaza, 10g aceite de oliva, cebolla"
+29,Judías verdes salteadas,49.0,1.4,8.0,4.2,verdura|aceite,"100g judías verdes, 10g aceite de oliva"
+30,Sopa de verduras casera,36.0,0.8,11.0,0.3,verdura,"150g verduras variadas*"
+31,Estofado de verduras,73.0,2.1,14.0,6.2,verdura|aceite,"100g verduras variadas*, 10g aceite de oliva"
+32,Revuelto de espinacas y gambas,123.5,19.0,3.0,10.4,verdura|marisco|aceite,"100g espinacas, 50g gambas, 5g aceite de oliva"
+33,Espaguetis integrales con atún,360.8,20.4,60.4,6.3,cereal|pescado azul|aceite,"100g pasta integral, 80g atún, 5g aceite de oliva"
+34,Arroz con huevo duro y tomate,268.0,9.3,49.6,8.4,cereal|huevo|verdura|aceite,"150g arroz cocido, 1 huevo (50g), 50g tomate, 5g aceite de oliva"
+35,Pisto de verduras,65.5,1.5,15.0,8.2,verdura|aceite,"150g verduras variadas*, 10g aceite de oliva"
+36,Fajitas de pollo con verduras,296.0,24.0,25.0,12.0,carne blanca|verdura|cereal|aceite,"100g pollo, 50g verduras salteadas, 1 tortilla integral (50g), 5g aceite de oliva"
+37,Pez espada a la plancha,124.0,20.5,0.0,5.7,pescado,"100g pez espada"
+38,Berenjenas rellenas de carne picada,211.0,17.0,6.0,12.5,verdura|carne roja|aceite,"100g berenjena, 50g carne picada, 10g aceite de oliva"
+39,Ensalada de garbanzos,228.0,9.0,18.0,9.7,legumbre|verdura|aceite,"100g garbanzos cocidos, 50g verduras variadas*, 10g aceite de oliva"
+40,Merluza al horno con verduras,147.5,21.0,4.0,3.5,pescado|verdura|aceite,"100g merluza, 50g verduras variadas*, 5g aceite de oliva"
+41,Estofado de ternera con verduras,320,26,18,16,carne roja|verdura|aceite,"100g ternera, 50g verduras, 10g aceite de oliva"
+42,Revuelto de espinacas y champiñones,160,12,5,9,verdura|huevo|aceite,"100g espinacas, 50g champiñones, 2 huevos, 5g aceite de oliva"
+43,Pescado blanco a la plancha,180,22,0,10,pescado|aceite,"100g pescado blanco, 5g aceite de oliva"
+44,Ensalada de tomate y queso fresco,150,10,5,10,verdura|lacteo|aceite,"100g tomate, 80g queso fresco, 5g aceite de oliva"
+45,Gazpacho casero,120,3,15,6,verdura|aceite,"200g gazpacho, 10g aceite de oliva"
+46,Merluza hervida con brócoli,180,20,8,4,pescado|verdura,"100g merluza, 100g brócoli"
+47,Revuelto de gambas y calabacín,170,18,4,8,verdura|aceite|marisco,"100g gambas, 50g calabacín, 5g aceite de oliva"
+48,Espinacas salteadas con ajo y piñones,140,4,6,10,verdura|aceite|frutos secos,"100g espinacas, 10g piñones, 5g aceite de oliva, ajo"
+49,Ensalada templada de espinacas y pollo,200,20,8,8,verdura|carne blanca|aceite,"100g espinacas, 100g pollo, 10g aceite de oliva"
+50,Hummus con palitos de verdura,180,6,18,10,lacteo|verdura|aceite,"50g hummus, 100g palitos de verdura"
+51,Tortilla de patata,250,12,20,14,huevo|verdura|aceite,"2 huevos, 100g patata, 10g aceite de oliva"
+52,Batido de espinacas y plátano,180,4,35,2,fruta|verdura,"100g espinacas, 1 plátano, 150ml agua"
+53,Paté de aguacate y garbanzos,220,6,20,12,legumbre|verdura|aceite,"50g garbanzos, 50g aguacate, 5g aceite de oliva"
+54,Bowl de quinoa y verduras,300,8,45,8,cereal|verdura,"100g quinoa cocida, 80g verduras variadas"
+55,Pan pita con hummus,260,8,40,8,cereal|legumbre|aceite,"1 pan pita, 50g hummus"
+56,Yogur griego con miel,150,8,17,4,lacteo,"125g yogur griego, 10g miel"
+57,Ensalada de pollo y manzana,240,20,15,10,carne blanca|fruta|verdura,"100g pollo, ½ manzana, 50g lechuga"
+58,Sándwich de pavo y queso,310,20,30,12,cereal|carne blanca|lacteo,"2 rebanadas pan integral, 50g pavo, 30g queso"
+59,Galletas de avena caseras,180,4,28,6,cereal|aceite|frutos secos,"40g avena, 10g nueces, 10g aceite de oliva"
+60,Barrita proteica casera,200,12,20,8,cereal|frutos secos|lacteo,"30g avena, 15g proteína en polvo, 10g almendra"
+61,Crepes de avena y plátano,223,6.6,34.0,6.2,cereal|fruta|huevo,"40g avena, 1 plátano (100g), 1 huevo (50g)"
+62,Sushi de salmón y aguacate,276,9.8,39.2,8.3,cereal|pescado azul|aceite,"100g arroz, 50g salmón, 30g aguacate"
+63,Calamares a la romana,260,15.0,20.0,12.0,pescado|aceite|cereal,"100g calamares, 20g harina, 10g aceite"
+64,Berenjenas a la parmesana,222,8.2,18.1,12.5,verdura|lacteo|aceite,"100g berenjena, 30g queso, 10g aceite"
+65,Chili con carne,322,25.4,15.2,18.5,carne roja|legumbre,"100g carne picada, 80g frijoles, especias"
+66,Wrap de atún y espinacas,242,18.4,20.8,10.2,cereal|pescado azul|verdura,"1 tortilla integral (50g), 80g atún, 50g espinacas"
+67,Crema de champiñones,121,3.2,10.4,8.3,verdura|lacteo|aceite,"150g champiñones, 50ml nata, 5g aceite"
+68,Tabulé de couscous,202,6.1,35.4,4.1,cereal|verdura|aceite,"80g couscous, 50g tomate, 10g aceite"
+69,Ensalada de lentejas y feta,282,14.3,25.1,12.2,legumbre|lacteo|verdura,"100g lentejas, 30g queso feta, 50g lechuga"
+70,Filete de cerdo a la plancha,230,23.0,0.0,15.0,carne roja,"120g lomo de cerdo"
+71,Gambas al ajillo,193,20.5,2.3,10.8,aceite|marisco,"100g gambas, 10g aceite, ajo"
+72,Nachos integrales con guacamole,302,6.2,40.3,12.1,cereal|legumbre|aceite,"50g nachos, 50g guacamole"
+73,Crema de calabacín,132,2.4,15.2,6.1,verdura|aceite,"150g calabacín, 10g aceite"
+74,Tacos de pollo y pico de gallo,272,22.1,20.4,10.3,carne blanca|verdura|cereal,"2 tortillas integrales (60g), 100g pollo, pico de gallo"
+75,Ensalada de quinoa y garbanzos,322,12.4,45.2,10.1,cereal|legumbre|verdura,"100g quinoa, 50g garbanzos, 50g verduras"
+76,Panini de jamón serrano,282,14.4,30.2,10.1,cereal|carne roja|lacteo,"2 rebanadas pan integral, 50g jamón serrano, 30g queso"
+77,Crepes de espinacas y ricotta,262,12.3,20.4,14.1,cereal|lacteo|verdura,"40g harina, 50g espinacas, 30g ricotta"
+78,Ensalada de salmón ahumado,198,18.1,5.1,12.0,pescado azul|verdura|aceite,"80g salmón ahumado, 50g lechuga, 5g aceite"
+79,Pizza casera integral,304,12.1,40.3,10.2,cereal|lacteo|verdura,"100g masa integral, 50g tomate, 30g queso"
+80,Pollo al limón,238,23.8,0.0,13.9,carne blanca,"120g pollo, limón, especias"
+81,Sándwich de hummus y pimiento,218,8.2,29.5,8.1,cereal|legumbre|verdura,"2 rebanadas pan integral (100g), 50g hummus, 30g pimiento"
+82,Patata asada con queso,198,5.1,29.8,6.3,verdura|lacteo,"150g patata asada, 30g queso rallado"
+83,Gnocchi con salsa de tomate,262,7.1,45.2,6.1,cereal|verdura,"100g gnocchi, 50g tomate, especias"
+84,Filete de dorada al horno,212,22.4,0.0,12.3,pescado|aceite,"120g dorada, 5g aceite de oliva"
+85,Ensalada de pasta fría,318,10.2,49.6,8.2,cereal|verdura|aceite,"100g pasta integral, 50g verduras variadas, 10g aceite de oliva"
+86,Rollitos de pavo y espinacas,182,18.3,2.1,9.8,carne blanca|verdura,"100g pechuga de pavo, 50g espinacas"
+87,Cuscús con pollo y almendras,338,20.2,39.8,12.3,cereal|carne blanca|frutos secos,"100g cuscús, 100g pollo, 15g almendras"
+88,Ensalada de espinacas y quinoa,302,12.1,40.4,8.2,verdura|cereal,"100g espinacas, 80g quinoa cocida"
+89,Crema de champiñones y puerro,138,3.1,12.3,8.2,verdura,"100g champiñones, 50g puerro, 5g aceite de oliva"
+90,Sushi vegetariano,248,4.2,49.8,6.1,cereal|verdura,"100g arroz, 50g verduras variadas"
+91,Burrito de carne y frijoles,362,22.3,44.7,12.4,cereal|carne roja|legumbre,"1 tortilla integral (60g), 100g carne picada, 50g frijoles"
+92,Ensalada de remolacha y queso de cabra,218,8.1,19.6,12.1,verdura|lacteo,"100g remolacha, 30g queso de cabra, 10g aceite de oliva"
+93,Huevos revueltos con champiñones,182,12.1,5.3,12.2,huevo|verdura|aceite,"2 huevos (100g), 50g champiñones, 5g aceite de oliva"
+94,Pollo tikka masala,348,25.3,29.6,15.8,carne blanca|aceite,"120g pollo, salsa masala (50g), 10g aceite de oliva"
+95,Ratatouille,179,3.1,20.4,10.2,verdura|aceite,"150g verduras variadas, 10g aceite de oliva"
+96,Wrap de falafel,298,11.9,39.7,10.2,cereal|legumbre|verdura,"1 tortilla integral (50g), 80g falafel, 50g vegetales"
+97,Ensalada de col y zanahoria,118,2.0,11.8,5.9,verdura|aceite,"100g col, 50g zanahoria, 10g aceite de oliva"
+98,Filete de ternera con setas,282,26.3,4.1,14.2,carne roja|verdura|aceite,"120g ternera, 50g champiñones, 10g aceite de oliva"
+99,Pasta pesto genovés,322,9.8,45.1,12.3,cereal|aceite|verdura,"100g pasta integral, 20g pesto, 10g aceite de oliva"
+100,Ensalada de rúcula y parmesano,178,7.2,5.1,12.1,verdura|lacteo|aceite,"50g rúcula, 20g parmesano, 5g aceite de oliva"
+101,Huevos revueltos con aceitunas,148,12.6,1.1,10.3,huevo|aceite,"2 huevos (100g), 5 aceitunas (5g)"
+102,Tostada de aguacate,180,4.0,24.0,9.0,cereal|fruta|aceite,"50g pan integral, 50g aguacate"
+103,Yogur natural,60,5.0,4.0,3.0,lacteo,"100g yogur natural"
+104,Café negro,2,0.0,0.0,0.0,bebida,"200ml café solo"
+105,Café con leche,42,3.0,4.0,1.5,bebida|lacteo,"150ml café, 50ml leche entera"
+106,Batido de proteína,120,24.0,3.0,1.5,proteína|bebida,"30g proteína en polvo con agua"
+107,Edamames,120,11.0,9.0,5.0,legumbre|verdura,"100g edamames cocidos"
+109,Batata asada,90,1.5,20.0,0.1,tubérculo,"100g batata asada"
+110,Bebida de soja,33,3.5,1.8,1.5,bebida|soja,"100ml bebida de soja sin azúcar"
+111,Pan integral,110,4.0,20.0,1.5,cereal,"50g pan integral"
+112,Avena en agua,70,3.0,12.0,1.5,cereal,"30g avena, agua"
+113,Quinoa cocida,120,4.0,20.0,1.9,cereal|legumbre,"100g quinoa cocida"
+114,Clara de huevo,20,4.0,0.2,0.0,huevo,"60g clara de huevo"
+115,Proteína en polvo,100,20.0,2.0,1.0,proteína,"25g scoop"
+116,Pechuga de pollo,165,31.0,0.0,3.0,carne blanca,"100g pechuga de pollo a la plancha"
+117,Salmón al horno,208,20.0,0.0,13.0,pescado azul,"100g salmón al horno"
+118,Atún natural,120,26.0,0.0,1.0,pescado azul,"100g atún al natural"
+119,Lentejas cocidas,116,9.0,20.0,3.0,legumbre,"100g lentejas cocidas"
+120,Garbanzos cocidos,164,9.0,27.0,3.0,legumbre,"100g garbanzos cocidos"
+121,Tofu firme,76,8,1.9,4,soja,"100g tofu firme"
+122,Clara de huevo en polvo,380,80,7,4,huevo,"100g polvo de clara"
+123,Leche entera,61,3.2,4.8,3.2,lacteo,"100ml leche entera"
+124,Queso fresco,98,11,3,5,lacteo,"100g queso fresco"
+125,Yogur griego,130,10,4,8,lacteo,"100g yogur griego"
+126,Pan de centeno,80,3,15,1.2,cereal,"40g pan de centeno"
+127,Arroz integral,112,2.6,23,0.9,cereal,"100g arroz integral cocido"
+128,Pasta integral,130,5,25,1.5,cereal,"100g pasta integral cocida"
+129,Patata cocida,87,2,20,0.1,tubérculo,"100g patata cocida"
+130,Maíz cocido,96,3.4,21,1.5,cereal,"100g maíz cocido"
+131,Espinacas salteadas,80,3,8,4,verdura,"150g espinacas + 5g aceite"
+132,Brocoli al vapor,35,3,7,0.4,verdura,"150g brócoli"
+133,Tomate en rodajas,18,0.9,3.9,0.2,verdura,"100g tomate"
+134,Zanahoria cruda,41,0.9,10,0.2,verdura,"100g zanahoria"
+135,Manzana,52,0.3,14,0.2,fruta,"100g manzana"
+136,Pera,57,0.4,15,0.1,fruta,"100g pera"
+137,Plátano,89,1.1,23,0.3,fruta,"100g plátano"
+138,Fresas,32,0.7,7.7,0.3,fruta,"100g fresas"
+139,Nueces,200,5,4,20,frutos secos,"30g nueces"
+140,Pistachos,170,6,8,14,frutos secos,"30g pistachos"
+141,Cacahuete,170,8,6,14,frutos secos,"30g cacahuetes"
+142,Sardinas,208,24,0,11,pescado azul,"100g sardinas"
+143,Anchoas,210,28,0,10,pescado azul,"100g anchoas en aceite"
+144,Tostada de pavo,120,12,15,2,cereal|carne blanca,"50g pan integral, 50g pavo"
+145,Yogur con frutos rojos,90,5,12,2,lacteo|fruta,"100g yogur natural, 50g frutos rojos"
+146,Crema de cacahuete,188,7,6,16,frutos secos,"30g crema de cacahuete"
+147,Hummus,166,8,14,9,legumbre,"50g hummus"
+148,Champiñones salteados,50,3,4,3,verdura|aceite,"100g champiñones, 5g aceite de oliva"
+149,Ensalada mixta,120,3,10,8,verdura|aceite,"100g mezcla de lechuga, tomate y zanahoria, 10g aceite de oliva"
+150,Zumo de naranja,45,0.7,10,0.1,fruta,"100ml zumo de naranja"
+151,Salmorejo,150,3,15,9,verdura|aceite|fruta,"200g tomate, 20g pan integral, 10g aceite de oliva, 10g ajo"
+152,Hummus clásico,180,6,12,12,legumbre|aceite,"100g garbanzos cocidos, 10g tahini, 10g aceite de oliva, limón"
+153,Gazpacho andaluz,120,2,18,4,verdura|aceite,"200g tomate, 50g pepino, 10g pimiento, 10g aceite de oliva"
+154,Tortilla de espinacas,220,12,10,14,huevo|verdura|aceite,"2 huevos (100g), 50g espinacas, 5g aceite de oliva"
+155,Smoothie verde,180,4,30,4,fruta|verdura|lacteo,"100g espinaca, 100g plátano, 100ml bebida de soja"
+156,Bowl de yogur y frutos rojos,200,8,25,6,lacteo|fruta|frutos secos,"150g yogur natural, 50g frutos rojos, 10g nueces"
+157,Ensalada de quinoa,240,8,35,8,cereal|verdura|legumbre,"100g quinoa cocida, 50g garbanzos cocidos, 50g tomate, 10g aceite de oliva"
+158,Tofu salteado,210,16,8,12,soja|verdura|aceite,"100g tofu firme, 100g brócoli, 10g aceite de oliva"
+159,Filete de salmón al horno,300,22,0,22,pescado|aceite,"150g salmón, 10g aceite de oliva"
+160,Pollo a la plancha,190,28,0,8,carne|aceite,"120g pechuga de pollo, 5g aceite de oliva"
+161,Ensalada caprese,250,10,10,20,lacteo|verdura|aceite,"100g mozzarella, 100g tomate, 10g aceite de oliva, albahaca"
+162,Tabulé de bulgur,210,6,35,4,cereal|verdura,"100g bulgur, 50g pepino, 50g tomate, perejil"
+163,Berenjenas rellenas,230,10,18,12,verdura|legumbre|aceite,"1 berenjena, 80g lentejas cocidas, 10g aceite de oliva"
+164,Crema de calabaza,160,3,20,8,verdura|aceite,"200g calabaza, 10g aceite de oliva, especias"
+165,Tostada de aguacate,180,4,20,8,aceite|fruta|cereal,"1 rebanada pan integral (40g), 50g aguacate, limón"
+166,Ensalada de lentejas,220,12,25,6,legumbre|verdura|aceite,"100g lentejas cocidas, 50g pimiento, 10g aceite de oliva"
+167,Pasta integral pesto,330,10,45,12,cereal|aceite|verdura,"80g pasta integral, 20g pesto, 10g aceite de oliva"
+168,Wrap de pollo,280,20,30,8,cereal|carne|verdura,"1 tortilla integral (50g), 100g pollo, 50g lechuga"
+169,Ceviche de gambas,180,18,5,8,marisco|aceite,"100g gambas, 50g tomate, limón, 5g aceite de oliva"
+170,Ensalada César,300,15,10,22,carne|lacteo|aceite,"100g pollo, 20g parmesano, 10g aceite de oliva"
+171,Salteado de espárragos,150,4,8,10,verdura|aceite,"100g espárragos, 10g aceite de oliva, ajo"
+172,Tarta de manzana fit,210,4,30,8,fruta|cereal|lacteo,"100g manzana, 40g avena, 50g yogur natural"
+173,Brócoli al vapor con almendras,140,5,8,8,verdura|frutos secos,"100g brócoli, 10g almendras"
+174,Tacos de pescado,260,18,25,8,pescado|cereal,"2 tortillas integrales (60g), 100g pescado, salsa"
+175,Gachas de avena,250,8,40,6,cereal|lacteo,"60g avena, 200ml bebida de avena, fruta"
+176,Crudités con hummus,190,6,15,12,verdura|legumbre,"100g zanahoria, 100g apio, 50g hummus"
+177,Ensalada griega,280,10,12,22,verdura|lacteo|aceite,"100g queso feta, 50g pepino, 10g aceite de oliva"
+178,Crepes de espinacas,220,12,20,10,huevo|verdura|cereal,"1 crepe de avena, 50g espinacas, 5g aceite de oliva"
+179,Arroz con pollo,320,22,40,8,cereal|carne,"80g arroz integral, 100g pollo, especias"
+180,Quiche vegetal,260,8,20,16,cereal|verdura|lacteo,"50g masa integral, 100g verduras variadas, 1 huevo"
+181,Tosta de salmón ahumado,190,12,10,12,pescado|cereal|lacteo,"1 rebanada pan integral (40g), 50g salmón ahumado, 20g queso fresco"
+182,Ensalada de garbanzos,230,12,28,6,legumbre|verdura|aceite,"100g garbanzos cocidos, 50g tomate, 10g aceite de oliva"
+183,Crema de champiñones,180,4,12,12,verdura|lacteo,"200g champiñones, 50ml nata ligera"
+184,Pollo al limón,200,28,0,8,carne|aceite,"120g pechuga de pollo, limón, 5g aceite de oliva"
+185,Espaguetis de calabacín,150,4,10,8,verdura|aceite,"200g calabacín, 10g aceite de oliva, ajo"
+186,Salpicón de marisco,210,18,8,10,marisco|verdura,"100g marisco mixto, 50g cebolla"
+187,Ensalada de aguacate y atún,260,18,12,14,fruta|pescado|aceite,"100g aguacate, 80g atún al natural, 10g aceite de oliva"
+188,Pollo tikka masala fit,280,22,10,14,carne|lacteo|aceite,"120g pechuga de pollo, 50ml yogur natural, especias, 10g aceite de oliva"
+189,Bloburguer de lentejas,250,12,30,8,legumbre|cereal,"100g lentejas cocidas, 40g copos de avena, especias"
+190,Rollitos de verano,180,8,20,8,verdura|marisco,"3 láminas de papel de arroz, 50g verduras variadas, 50g gambas cocidas"
+191,Ensalada tibia de calabaza,220,4,30,10,verdura|frutos secos,"100g calabaza asada, 10g pipas de calabaza, 10g aceite de oliva"
+192,Wrap vegetal,200,6,28,8,cereal|verdura|aceite,"1 tortilla integral (50g), 50g lechuga, 50g tomate, 10g aceite de oliva"
+193,Muffins de avena y plátano,230,6,30,8,cereal|fruta,"60g copos de avena, 1 plátano (100g), 10g miel"
+194,Ensalada de remolacha,180,4,20,10,verdura|lacteo|aceite,"100g remolacha cocida, 50g queso fresco, 10g aceite de oliva"
+195,Pollo al curry ligero,260,24,12,12,carne|verdura|lacteo,"120g pechuga de pollo, 50ml yogur natural, 15g salsa masala"
+196,Tazón buddha,300,10,35,12,cereal|verdura|legumbre,"80g arroz integral, 50g garbanzos cocidos, 50g aguacate"
+197,Ensalada de pasta fría,290,8,45,10,cereal|verdura|aceite,"80g pasta integral cocida, 50g tomate, 10g aceite de oliva"
+198,Tortilla de patata saludable,240,8,30,10,verdura|huevo|aceite,"100g patata cocida, 2 huevos (100g), 5g aceite de oliva"
+199,Ceviche de tofu,200,16,8,10,soja|verdura|aceite,"100g tofu firme, 50g cebolla, 10g jugo de limón, 5g aceite de oliva"
+200,Pizza integral casera,320,12,40,12,cereal|lacteo|verdura,"100g masa integral, 50g tomate, 50g queso rallado, orégano"
+201,Tostada 60g + Huevos revueltos 1.5 + Tomate 100g + Pera 150g,405,17,57,13,cereal|huevo|verdura|fruta,"Tostada integral 60g, Huevos revueltos (1.5 uds), Tomate 100g, Pera 150g"
+202,Bacalao salsa verde 170g + Brócoli 200g + Patata 150g + Salmorejo 200ml,619,51,55,22,pescado|verdura|tubérculo|aceite,"Bacalao en salsa verde 170g, Brócoli hervido 200g, Patata cocida 150g, Salmorejo 200ml"
+203,Yogur griego 200g + Proteína 20g + Frambuesa 150g,418,38,28,18,lácteo|proteína|fruta,"Yogur griego 200g, Proteína en polvo 20g, Frambuesas 150g"
+204,Merluza horno 170g + Calabacín 200g + Patata 150g + Salmorejo 200ml,655,49,65,20,pescado|verdura|tubérculo|aceite,"Merluza al horno 170g, Calabacín 200g, Patata cocida 150g, Salmorejo 200ml"
+205,Tostada 60g + Queso fresco 80g + Tomate 100g + Naranja 150g,377,17,59,7,lácteo|cereal|verdura|fruta,"Tostada integral 60g, Queso fresco 80g, Tomate 100g, Naranja 150g"
+206,Lentejas estofadas 70g + Arroz integral 40g + Verdura 200g + Ensalada + Gazpacho 200ml,865,42,94,36,legumbre|cereal|verdura|aceite,"Lentejas estofadas 70g, Arroz integral 40g, Verdura variada 200g, Ensalada mixta 100g, Gazpacho 200ml"
+207,Tostada 60g + Jamón 40g + Tomate 100g,288,16,40,9,cereal|fiambre|verdura,"Tostada integral 60g, Jamón 40g, Tomate 100g"
+208,Fajitas de merluza (Tortilla 70g + Merluza 150g + Verduras 150g),493,45,50,13,cereal|pescado|verdura,"Tortillas 70g, Merluza a la plancha 150g, Verduras salteadas 150g"
+209,Tostada 60g + Jamón 60g + Tomate 100g + Kiwi 150g,409,22,54,11.2,cereal|fiambre|verdura|fruta,"Tostada integral 60g, Jamón 60g, Tomate 100g, Kiwi 150g"
+210,Salmon plancha 170g + Quinoa 60g + Espárragos 200g + Salmorejo 200ml,616,47.2,34.4,32.2,pescado|cereal|verdura|aceite,"Salmón plancha 170g, Quinoa cocida 60g, Espárragos 200g, Salmorejo 200ml"
+211,Yogur natural 125g + Proteína 20g + Plátano 150g,256,21.0,35.9,4.7,lácteo|proteína|fruta,"Yogur natural 125g, Proteína en polvo 20g, Plátano 150g"
+212,Ensalada caprese (Mozzarella 80g) + Tortilla francesa 2 huevos + Gazpacho 250ml,376,25.0,25.5,18.0,lácteo|huevo|verdura|aceite,"Mozzarella 80g, Tortilla francesa (2 huevos), Gazpacho 250ml"
+213,Tostada 60g + 1.5 Huevos revueltos + Tomate 100g + Manzana 150g,419,20.4,52.8,13.8,cereal|huevo|verdura|fruta,"Tostada integral 60g, Huevos revueltos 1.5 uds, Tomate 100g, Manzana 150g"
+214,Chili de alubias rojas 70g + Ternera 150g + Arroz 30g + Gazpacho 200ml,654,36.5,60.5,24.0,legumbre|carne roja|cereal|verdura,"Chili alubias rojas 70g, Ternera plancha 150g, Arroz cocido 30g, Gazpacho 200ml"
+215,Tostada 60g + Queso fresco 60g + Tomate 100g,296,13.6,41.4,7.6,cereal|lácteo|verdura,"Tostada integral 60g, Queso fresco 60g, Tomate 100g"
+216,Dorada horno 180g + Verduras 200g + Patata 150g + Salmorejo 200ml,589,41.0,61.5,24.2,pescado|verdura|tubérculo|aceite,"Dorada al horno 180g, Verduras variadas 200g, Patata cocida 150g, Salmorejo 200ml"
+217,Tostada 60g + Queso curado 40g + Tomate 100g + Melón 150g,438,17.9,52,17.7,lácteo|cereal|verdura|fruta,"Tostada integral 60g, Queso curado 40g, Tomate 100g, Melón 150g"
+218,Pavo plancha 200g + Arroz integral 60g + Verduras 150g + Aguacate 60g + Gazpacho 250ml,553,52.3,51.3,17.9,carne blanca|cereal|verdura|fruta|aceite,"Pavo a la plancha 200g, Arroz integral 60g, Verduras 150g, Aguacate 60g, Gazpacho 250ml"
+219,Yogur natural 125g + Proteína 20g + Fresas 150g,193,24.6,18.6,4.8,lácteo|proteína|fruta,"Yogur natural 125g, Proteína en polvo 20g, Fresas 150g"
+220,Picnic playero: Wrap integral 70g + Hummus 60g + Huevo duro 1 + Verduras 100g + Salmorejo 250ml,685,26.7,74.2,31.6,cereal|legumbre|huevo|verdura|aceite,"Wrap integral 70g, Hummus 60g, Huevo duro 1, Verduras crudité 100g, Salmorejo 250ml"
+221,Tostada 60g + Huevos revueltos 2 + Tomate 100g + Manzana 150g,480,19.8,61.1,15.5,cereal|huevo|verdura|fruta,"Tostada integral 60g, Huevos revueltos 2, Tomate 100g, Manzana 150g"
+222,Tostada 60g + Jamón 60g + Tomate 100g + Plátano 150g,462,23.6,75.4,8.2,cereal|fiambre|verdura|fruta,"Tostada integral 60g, Jamón 60g, Tomate 100g, Plátano 150g"
+223,Paella mixta (Pollo 120g, Marisco 120g, Arroz 70g) + Ensalada 100g + Gazpacho 250ml,536,60.5,48.3,11.5,cereal|carne blanca|marisco|verdura|aceite,"Paella mixta: Pollo 120g, Marisco 120g, Arroz 70g; Ensalada mixta 100g; Gazpacho 250ml"
+224,Yogur natural 125g + Proteína 20g + Mango 150g,235,24.6,29.6,4.6,lácteo|proteína|fruta,"Yogur natural 125g, Proteína en polvo 20g, Mango 150g"
+225,Fajitas de pollo: Tortilla 80g + Pollo 200g + Pimiento-cebolla 150g + Aguacate 60g + Gazpacho 250ml,826,73.2,73.5,25,cereal|carne blanca|verdura|fruta|aceite,"Fajitas de pollo: Tortilla integral 80g, Pollo 200g, Pimiento y cebolla 150g, Aguacate 60g; Gazpacho 250ml"
+226,Tostada 60g + Huevos revueltos 1.5 + Tomate 100g + Pera 150g,405,17,57,13,cereal|huevo|verdura|fruta,"Tostada integral 60g, Huevos revueltos 1.5 uds, Tomate 100g, Pera 150g"
+227,Ensalada templada de lentejas 70g + Cuscús 40g + Verduras 200g + Gazpacho 250ml,688,28,87,25,legumbre|cereal|verdura|aceite,"Lentejas estofadas 70g, Cuscús 40g, Verduras variadas 200g, Gazpacho 250ml"
+228,Yogur natural 125g + Proteína 20g + Arándanos 150g,211,23.1,18.1,4.4,lácteo|proteína|fruta,"Yogur natural 125g, Proteína en polvo 20g, Arándanos 150g"
+229,Fajitas de pollo (150g) + Verduras 150g + Tortillas 70g + Salmorejo 200ml,670,60,57,22,cereal|carne blanca|verdura|aceite,"Fajitas de pollo: Pollo 150g, Verduras 150g, Tortillas integrales 70g, Salmorejo 200ml"
+230,Tostada 60g + Queso cottage 100g + Tomate 100g + Manzana 150g,338,14.2,53.4,8.8,lácteo|cereal|verdura|fruta,"Tostada integral 60g, Queso cottage 100g, Tomate 100g, Manzana 150g"
+231,Rape plancha 170g + Espárragos 200g + Salmorejo 250ml,497,43.4,21.8,24.8,pescado|verdura|aceite,"Rape plancha 170g, Espárragos 200g, Salmorejo 250ml"
+232,Tostada 60g + Jamón 40g + Tomate 100g,288,16,40,9,cereal|fiambre|verdura,"Tostada integral 60g, Jamón 40g, Tomate 100g"
+233,Caballa plancha 170g + Espinacas 180g + Salmorejo 250ml,530,45.8,25.2,26.5,pescado|verdura|aceite,"Caballa plancha 170g, Espinacas 180g, Salmorejo 250ml"
+234,Tostada 60g + Jamón 60g + Tomate 100g + Kiwi 150g,409,22,54,11.2,cereal|fiambre|verdura|fruta,"Tostada integral 60g, Jamón 60g, Tomate 100g, Kiwi 150g"
+235,Pollo al curry 200g + Arroz basmati 60g + Verduras 150g + Gazpacho 200ml,812,54,89,21,carne blanca|cereal|verdura|aceite,"Pollo al curry 200g, Arroz basmati 60g, Verduras 150g, Gazpacho 200ml"
+236,Yogur natural 125g + Proteína 20g + Plátano 150g,256,21,35.9,4.7,lácteo|proteína|fruta,"Yogur natural 125g, Proteína en polvo 20g, Plátano 150g"
+237,Ensalada garbanzos 80g + Atún 120g + Verduras 150g + Salmorejo 200ml,586,39.6,43.8,22.5,legumbre|pescado|verdura|aceite,"Garbanzos cocidos 80g, Atún 120g, Verduras 150g, Salmorejo 200ml"
+238,Tostada 60g + Huevos revueltos 1.5 + Tomate 100g + Naranja 150g,409,17,58,13,cereal|huevo|verdura|fruta,"Tostada integral 60g, Huevos revueltos 1.5 uds, Tomate 100g, Naranja 150g"
+239,Merluza gallega 180g + Patata 200g + Grelos 150g + Gazpacho 250ml,650,42,79,24,pescado|verdura|tubérculo|aceite,"Merluza gallega 180g, Patata 200g, Grelos 150g, Gazpacho 250ml"
+240,Tostada 60g + Queso fresco 60g + Tomate 100g,296,13.6,41.4,7.6,cereal|lácteo|verdura,"Tostada integral 60g, Queso fresco 60g, Tomate 100g"
+241,Wrap frío de quinoa 60g + Pollo 150g + Verduras 150g + Tortilla 70g + Salmorejo 200ml,712,56,71,22,cereal|carne blanca|verdura|aceite,"Wrap frío: Quinoa 60g, Pollo 150g, Verduras 150g, Tortilla 70g, Salmorejo 200ml"
+242,Tostada 60g + Queso curado 40g + Tomate 100g + Melón 150g,438,17.9,52,17.7,lácteo|cereal|verdura|fruta,"Tostada integral 60g, Queso curado 40g, Tomate 100g, Melón 150g"
+243,Potaje alubia blanca 70g + Bacalao 100g + Verduras 150g + Gazpacho 250ml,615,38.4,70.5,20.5,legumbre|pescado|verdura|aceite,"Potaje alubia blanca 70g, Bacalao desalado 100g, Verduras 150g, Gazpacho 250ml"
+244,Yogur natural 125g + Proteína 20g + Mango 150g,235,24.6,29.6,4.6,lácteo|proteína|fruta,"Yogur natural 125g, Proteína en polvo 20g, Mango 150g"
+245,Poke arroz 60g + Salmón 150g + Verduras 150g + Salmorejo 200ml,745,54.2,70.8,25.5,cereal|pescado|verdura|aceite,"Poke: Arroz 60g, Salmón 150g, Verduras 150g, Salmorejo 200ml"
+246,Tostada 60g + 2 Huevos revueltos + Tomate 100g + Fruta variada 150g,536,20.4,63.4,21.3,cereal|huevo|verdura|fruta,"Tostada integral 60g, Huevos revueltos 2 uds, Tomate 100g, Fruta variada 150g"
+247,Tostada 60g + Jamón 60g + Tomate 100g + Plátano 150g,462,23.6,75.4,8.2,cereal|fiambre|verdura|fruta,"Tostada integral 60g, Jamón 60g, Tomate 100g, Plátano 150g"
+248,Ensalada templada lentejas 70g + Cuscús 40g + Verduras 200g + Gazpacho 250ml,688,28,87,25,legumbre|cereal|verdura|aceite,"Lentejas 70g, Cuscús 40g, Verduras mixtas 200g, Gazpacho 250ml"
+249,Tostada 60g + 1.5 Huevos revueltos + Tomate 100g + Pera 150g,405,17,57,13,cereal|huevo|verdura|fruta,"Tostada integral 60g, Huevos revueltos 1.5 uds, Tomate 100g, Pera 150g"
+250,Fajitas de pollo 150g + Verduras 150g + Tortillas 70g + Salmorejo 200ml,670,60,57,22,cereal|carne blanca|verdura|aceite,"Pollo 150g, Verduras salteadas 150g, Tortillas integrales 70g, Salmorejo 200ml"
+251,Tostada 60g + Queso cottage 100g + Tomate 100g + Arándanos 150g,338,14.2,53.4,8.8,lácteo|cereal|verdura|fruta,"Tostada integral 60g, Queso cottage 100g, Tomate 100g, Arándanos 150g"
+252,Rape plancha 170g + Espárragos 200g + Salmorejo 250ml,497,43.4,21.8,24.8,pescado|verdura|aceite,"Rape 170g, Espárragos 200g, Salmorejo 250ml"
+253,Tostada 60g + Jamón 60g + Tomate 100g + Kiwi 150g,409,22,54,11.2,cereal|fiambre|verdura|fruta,"Tostada integral 60g, Jamón 60g, Tomate 100g, Kiwi 150g"
+254,Pollo al curry 200g + Arroz basmati 60g + Verduras 150g + Gazpacho 200ml,812,54,89,21,carne blanca|cereal|verdura|aceite,"Pollo al curry 200g, Arroz basmati 60g, Verduras 150g, Gazpacho 200ml"
+255,Ensalada garbanzos 80g + Atún 120g + Verduras 150g + Salmorejo 200ml,586,39.6,43.8,22.5,legumbre|pescado|verdura|aceite,"Garbanzos cocidos 80g, Atún 120g, Verduras 150g, Salmorejo 200ml"
+256,Tostada 60g + Huevos revueltos 1.5 + Tomate 100g + Naranja 150g,409,17,58,13,cereal|huevo|verdura|fruta,"Tostada integral 60g, Huevos revueltos 1.5 uds, Tomate 100g, Naranja 150g"
+257,Merluza gallega 180g + Patata 200g + Grelos 150g + Gazpacho 250ml,650,42,79,24,pescado|verdura|tubérculo|aceite,"Merluza gallega 180g, Patata 200g, Grelos 150g, Gazpacho 250ml"
+258,Wrap frío de quinoa 60g + Pollo 150g + Verduras 150g + Tortilla 70g + Salmorejo 200ml,712,56,71,22,cereal|carne blanca|verdura|aceite,"Quinoa fría 60g, Pollo 150g, Verduras 150g, Tortilla 70g, Salmorejo 200ml"
+259,Potaje alubia blanca 70g + Bacalao 100g + Verduras 150g + Gazpacho 250ml,615,38.4,70.5,20.5,legumbre|pescado|verdura|aceite,"Alubias blancas 70g, Bacalao desalado 100g, Verduras 150g, Gazpacho 250ml"
+260,Poke arroz 60g + Salmón 150g + Verduras 150g + Salmorejo 200ml,745,54.2,70.8,25.5,cereal|pescado|verdura|aceite,"Arroz 60g, Salmón 150g, Verduras 150g, Salmorejo 200ml"
+`);
+
+  function calcNeeds() {
+    people = Array.from(document.querySelectorAll('#people-body tr')).map(tr => {
+      const [n,w,h,a,s,ac] = tr.querySelectorAll('input,select');
+      const kg = +w.value||0, cm = +h.value||0, age = +a.value||0;
+      const bmr = s.value==='H'
+        ? 10*kg + 6.25*cm - 5*age + 5
+        : 10*kg + 6.25*cm - 5*age - 161;
+      const loss = Math.round(bmr * activityMap[ac.value] * 0.8);
+      return { name:n.value||'Anon', bmr:Math.round(bmr), loss };
+    });
+    updateSummary();
+  }
+
+  function addPerson(data={}) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td><input value="${data.name||''}"></td>`+
+      `<td><input type="number" value="${data.w||''}"></td>`+
+      `<td><input type="number" value="${data.h||''}"></td>`+
+      `<td><input type="number" value="${data.a||''}"></td>`+
+      `<td><select><option${data.s==='H'?' selected':''}>H</option><option${data.s==='M'?' selected':''}>M</option></select></td>`+
+      `<td><select>${Object.keys(activityMap).map(k=>`<option${data.ac===k?' selected':''}>${k}</option>`).join('')}</select></td>`+
+      `<td><button>x</button></td>`;
+    document.getElementById('people-body').appendChild(tr);
+    tr.querySelector('button').onclick = () => { tr.remove(); calcNeeds(); };
+    tr.querySelectorAll('input,select').forEach(el => el.oninput = calcNeeds);
+    calcNeeds();
+  }
+  addPerson({name:'Elena',w:97,h:162,a:28,s:'M',ac:'Mod'});
+  addPerson({name:'Juan',w:135,h:182,a:32,s:'H',ac:'Mod'});
+  document.getElementById('add-person').onclick = () => addPerson();
+
+  function cardHTML(item) {
+    return `<div class="card" draggable="true" data-id="${item.id}">`+
+      `<div class="card-header">${item.types.map(t=>`<span>${iconFor(t)}</span>`).join('')}<span>${item.title}</span></div>`+
+      `<div class="card-ing" style="font-size:.7rem;color:#333;margin-top:4px">${item.ing || ''}</div>`+
+      `<div class="macros">`+
+        `<span style="color:blue;font-weight:bold">kcal:${item.kcal}</span>`+
+        `<span style="color:red;font-weight:bold">P:${item.p}g</span>`+
+        `<span style="color:gold;font-weight:bold">C:${item.c}g</span>`+
+        `<span style="color:green;font-weight:bold">F:${item.f}g</span>`+
+      `</div>`+
+    `</div>`;
+}
+
+  function renderCards(list) {
+    const bank = document.getElementById('card-bank');
+    bank.innerHTML = list.map(cardHTML).join('');
+    bank.querySelectorAll('.card').forEach(c => {
+      c.ondragstart = e => e.dataTransfer.setData('text', c.dataset.id);
+      c.onclick = () => alert(DATA.find(x=>x.id==c.dataset.id).ing);
+    });
+  }
+  document.getElementById('search').oninput = function() {
+    const q = this.value.toLowerCase();
+    renderCards(DATA.filter(x=>x.title.toLowerCase().includes(q)));
+  };
+
+  const MEALS = ['Desayuno','Comida','Snack','Cena'];
+  MEALS.forEach(meal => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<th>${meal}</th>` + Array(7).fill('<td><div class="cell-inner"></div></td>').join('');
+    document.getElementById('grid-body').appendChild(tr);
+    tr.querySelectorAll('td').forEach((td,i) => {
+      td.dataset.day = i;
+      td.ondragover = e => { e.preventDefault(); td.classList.add('over'); };
+      td.ondragleave = () => td.classList.remove('over');
+      td.ondrop = e => { e.preventDefault(); td.classList.remove('over'); addChip(td, e.dataTransfer.getData('text')); };
+    });
+  });
+
+  function addChip(td,id) {
+    const item = DATA.find(x=>x.id==id);
+    if(!item) return;
+    const chip = document.createElement('div'); chip.className='chip'; chip.dataset.id=id;
+    const icons = item.types.map(t=>`<span>${iconFor(t)}</span>`).join('');
+    chip.innerHTML = `
+      <div class="chip-icons">${icons}</div>
+      <div class="chip-title">${item.title}</div>
+      <div class="chip-ing" style="font-size:.7rem;color:#333">${item.ing || ''}</div>
+    `;
+    chip.draggable = true;
+    chip.ondragstart = e => { e.dataTransfer.setData('text', id); chip.remove(); updateSummary(); };
+    td.querySelector('.cell-inner').appendChild(chip);
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const dayNames = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+    const days = Array.from({length:7}, () => ({k:0,p:0,c:0,f:0}));
+    document.querySelectorAll('#grid-body td').forEach(td => {
+      const d = Number(td.dataset.day);
+      if(isNaN(d) || d<0 || d>=days.length) return;
+      td.querySelectorAll('.chip').forEach(ch => {
+        const it = DATA.find(x=>x.id==ch.dataset.id);
+        if(it) { days[d].k += it.kcal; days[d].p += it.p; days[d].c += it.c; days[d].f += it.f; }
+      });
+    });
+    const recs = people.map(p => ({cal:p.loss, p:Math.round(p.loss*0.25/4), c:Math.round(p.loss*0.45/4), f:Math.round(p.loss*0.30/9)}));
+    // en lugar de "people[0].loss" usamos el valor del input #base-cal
+const baseInput = document.getElementById('base-cal');
+  const base = Number(baseCalInput.value) || people[0].loss;
+  const ratios = people.map(p => p.loss / base);
+    let html = '<table><tr><th>Día</th>';
+    people.forEach((p,i) => {
+      html += `<th>${p.name}<br>BMR: ${p.bmr}<br>Obj: ${p.loss} kcal<br>`+
+              `<span style="font-size:.7rem">${recs[i].p}g P; ${recs[i].c}g C; ${recs[i].f}g F</span><br>`+
+              `<span style="font-size:.7rem">Raciones: ${Math.round(ratios[i]*100)/100}</span></th>`;
+    });
+    html += '</tr>';
+    days.forEach((d,i) => {
+      html += `<tr><td>${dayNames[i]}</td>`;
+      people.forEach((p,j) => {
+        const valCal = Math.round(d.k * ratios[j]);
+        const valP = Math.round(d.p * ratios[j]);
+        const valC = Math.round(d.c * ratios[j]);
+        const valF = Math.round(d.f * ratios[j]);
+        const pc = Math.min(valCal/p.loss,1);
+        const pp = Math.min(valP/recs[j].p,1);
+        const pb = Math.min(valC/recs[j].c,1);
+        const pf = Math.min(valF/recs[j].f,1);
+        html += `<td><div class="bar-container">`+
+                `<div class="bar bar-cal"><div style="width:${pc*100}%"></div><span class="bar-label">${valCal}/${p.loss}</span></div>`+
+                `<div class="bar bar-prot"><div style="width:${pp*100}%"></div><span class="bar-label">${valP}/${recs[j].p}g</span></div>`+
+                `<div class="bar bar-carb"><div style="width:${pb*100}%"></div><span class="bar-label">${valC}/${recs[j].c}g</span></div>`+
+                `<div class="bar bar-fat"><div style="width:${pf*100}%"></div><span class="bar-label">${valF}/${recs[j].f}g</span></div>`+
+                `</div></td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</table>';
+    document.getElementById('summary').innerHTML = html;
+  }
+});
+</script>
+</body>
+</html>

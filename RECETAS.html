@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Generador de Recetas RealFooding</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:system-ui,sans-serif;margin:0;display:grid;grid-template-rows:60px 1fr;grid-template-columns:260px 1fr;height:100vh;}
+    header{grid-column:1 / -1;background:#2d3748;color:#fff;padding:1rem;font-weight:600;font-size:1.4rem;}
+    #sidebar{grid-row:2;grid-column:1;background:#f7fafc;border-right:1px solid #e2e8f0;overflow-y:auto;padding:1rem;}
+    #sidebar input{width:100%;padding:0.5rem;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:1rem;}
+    .ingredient{padding:0.5rem;cursor:grab;border:1px solid #e2e8f0;border-radius:4px;margin:0.3rem 0;display:flex;align-items:center;}
+    .ingredient span{margin-left:0.5rem;}
+    #main{grid-row:2;grid-column:2;display:flex;flex-direction:column;}
+    #controls{padding:1rem;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:0.5rem;}
+    #controls select,#controls button{padding:0.4rem;border:1px solid #cbd5e0;border-radius:4px;}
+    button{background:#2b6cb0;color:#fff;cursor:pointer;}
+    button.delete{background:#e53e3e;}
+    button.edit{background:#4A5568;}
+    #drop-zone{flex:1;border:2px dashed #a0aec0;border-radius:4px;margin:1rem;padding:1rem;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#a0aec0;text-align:center;}
+    #table-container{flex:2;overflow:auto;padding:1rem;}
+    table{width:100%;border-collapse:collapse;}
+    th,td{border:1px solid #e2e8f0;padding:0.5rem;text-align:center;}
+    th{background:#edf2f7;}
+    input.qty{width:60px;text-align:right;border:1px solid #cbd5e0;border-radius:4px;padding:0.2rem;}
+  </style>
+</head>
+<body>
+<header>Generador de Recetas RealFooding</header>
+<div id="sidebar">
+  <input id="search" placeholder="Buscar ingrediente...">
+  <div id="ingredients-list"></div>
+</div>
+<div id="main">
+  <div id="controls">
+    <select id="recipe-select"></select>
+    <button id="new-recipe">+ Nueva receta</button>
+    <button id="edit-recipe" class="edit" disabled>✏️ Renombrar</button>
+    <button id="export" disabled>Exportar receta</button>
+    <button id="export-all" disabled>Exportar todas</button>
+  </div>
+  <div id="drop-zone">Arrastra aquí los ingredientes</div>
+  <div id="table-container">
+    <table>
+      <thead>
+        <tr><th>Icono</th><th>Ingrediente</th><th>Cant. (g)</th><th>Proteína</th><th>HC</th><th>Grasa</th><th>Kcal</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+      <tfoot>
+        <tr><th colspan="2">Totales</th><th></th><th id="total-prot">0.0</th><th id="total-carb">0.0</th><th id="total-fat">0.0</th><th id="total-kcal">0</th><th></th></tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+<script>
+ document.addEventListener('DOMContentLoaded',()=>{
+  const iconMap={legumbre:'🫘',verdura:'🥬',aceite:'🏺',carne:'🍖','carne roja':'🥩','carne blanca':'🍗',pescado:'🎣','pescado azul':'🐟',huevo:'🥚',fruta:'🍎',lacteo:'🥛',cereal:'🌾','frutos secos':'🥜','soja':'🫛',chocolate:'🍫',bebida:'☕',proteína:'🥤',tubérculo:'🥔',marisco:'🦐'};
+  const iconFor=type=>iconMap[type]||'❓';
+  const allIngredients=[
+    {id:1,name:'Arroz blanco',type:'cereal',prot:2.7,carb:28.2,fat:0.3,kcal:130},
+    {id:2,name:'Avena',type:'cereal',prot:16.9,carb:66.3,fat:6.9,kcal:389},
+    {id:3,name:'Trigo',type:'cereal',prot:13.2,carb:71.2,fat:1.5,kcal:339},
+    {id:4,name:'Maíz',type:'cereal',prot:9.4,carb:74.3,fat:4.7,kcal:365},
+    {id:5,name:'Papa',type:'tubérculo',prot:2.0,carb:17.5,fat:0.1,kcal:77},
+    {id:6,name:'Batata',type:'tubérculo',prot:1.6,carb:20.1,fat:0.1,kcal:86},
+    {id:7,name:'Lentejas',type:'legumbre',prot:9.0,carb:20.0,fat:0.4,kcal:116},
+    {id:8,name:'Garbanzos',type:'legumbre',prot:8.9,carb:27.4,fat:2.6,kcal:164},
+    {id:9,name:'Judías',type:'legumbre',prot:8.7,carb:16.4,fat:0.5,kcal:127},
+    {id:10,name:'Haba',type:'legumbre',prot:7.6,carb:14.1,fat:0.4,kcal:88},
+    {id:11,name:'Espinaca',type:'verdura',prot:2.9,carb:3.6,fat:0.4,kcal:23},
+    {id:12,name:'Lechuga',type:'verdura',prot:1.4,carb:2.9,fat:0.2,kcal:15},
+    {id:13,name:'Tomate',type:'verdura',prot:0.9,carb:3.9,fat:0.2,kcal:18},
+    {id:14,name:'Zanahoria',type:'verdura',prot:0.9,carb:9.6,fat:0.2,kcal:41},
+    {id:15,name:'Brócoli',type:'verdura',prot:2.8,carb:6.6,fat:0.4,kcal:34},
+    {id:16,name:'Manzana',type:'fruta',prot:0.3,carb:13.8,fat:0.2,kcal:52},
+    {id:17,name:'Plátano',type:'fruta',prot:1.1,carb:22.8,fat:0.3,kcal:96},
+    {id:18,name:'Naranja',type:'fruta',prot:0.9,carb:11.8,fat:0.1,kcal:47},
+    {id:19,name:'Leche entera',type:'lacteo',prot:3.3,carb:4.8,fat:3.4,kcal:60},
+    {id:20,name:'Yogur natural',type:'lacteo',prot:3.5,carb:4.7,fat:3.3,kcal:61},
+    {id:21,name:'Queso fresco',type:'lacteo',prot:18.0,carb:2.0,fat:17.0,kcal:254},
+    {id:22,name:'Pechuga de pollo',type:'carne blanca',prot:31.0,carb:0.0,fat:3.6,kcal:165},
+    {id:23,name:'Muslo de pollo',type:'carne blanca',prot:17.4,carb:0.0,fat:8.9,kcal:174},
+    {id:24,name:'Ternera',type:'carne roja',prot:26.1,carb:0.0,fat:17.2,kcal:250},
+    {id:25,name:'Cerdo',type:'carne roja',prot:21.2,carb:0.0,fat:21.5,kcal:263},
+    {id:26,name:'Merluza',type:'pescado',prot:17.6,carb:0.0,fat:0.3,kcal:82},
+    {id:27,name:'Salmón',type:'pescado azul',prot:20.0,carb:0.0,fat:13.0,kcal:208},
+    {id:28,name:'Atún',type:'pescado azul',prot:29.0,carb:0.0,fat:3.6,kcal:132},
+    {id:29,name:'Huevo',type:'huevo',prot:13.0,carb:1.1,fat:11.0,kcal:155},
+    {id:30,name:'Aceite de oliva',type:'aceite',prot:0.0,carb:0.0,fat:100.0,kcal:884},
+    {id:31,name:'Almendras',type:'frutos secos',prot:21.1,carb:21.6,fat:49.4,kcal:579},
+    {id:32,name:'Nueces',type:'frutos secos',prot:15.2,carb:13.7,fat:65.2,kcal:654},
+    {id:33,name:'Semillas de chía',type:'soja',prot:16.5,carb:42.1,fat:30.7,kcal:486},
+    {id:34,name:'Chocolate negro',type:'chocolate',prot:7.6,carb:46.3,fat:43.1,kcal:546},
+    {id:35,name:'Pimiento rojo',type:'verdura',prot:0.9,carb:6.0,fat:0.3,kcal:31},
+    {id:36,name:'Pepino',type:'verdura',prot:0.7,carb:3.6,fat:0.1,kcal:16},
+    {id:37,name:'Berenjena',type:'verdura',prot:1.0,carb:5.9,fat:0.2,kcal:25},
+    {id:38,name:'Calabacín',type:'verdura',prot:1.2,carb:3.1,fat:0.3,kcal:17},
+    {id:39,name:'Cebolla',type:'verdura',prot:1.1,carb:9.3,fat:0.1,kcal:40},
+    {id:40,name:'Ajo',type:'verdura',prot:6.4,carb:33.1,fat:0.5,kcal:149},
+    {id:41,name:'Calabaza',type:'verdura',prot:1.0,carb:7.0,fat:0.1,kcal:26},
+    {id:42,name:'Champiñones',type:'verdura',prot:3.1,carb:3.3,fat:0.3,kcal:22},
+    {id:43,name:'Coliflor',type:'verdura',prot:1.9,carb:4.9,fat:0.3,kcal:25},
+    {id:44,name:'Repollo',type:'verdura',prot:1.3,carb:5.8,fat:0.1,kcal:25},
+    {id:45,name:'Fresa',type:'fruta',prot:0.8,carb:7.7,fat:0.3,kcal:32},
+    {id:46,name:'Pera',type:'fruta',prot:0.4,carb:15.2,fat:0.1,kcal:57},
+    {id:47,name:'Melocotón',type:'fruta',prot:0.9,carb:9.5,fat:0.3,kcal:39},
+    {id:48,name:'Sandía',type:'fruta',prot:0.6,carb:7.6,fat:0.2,kcal:30},
+    {id:49,name:'Espárragos',type:'verdura',prot:2.2,carb:3.9,fat:0.1,kcal:20},
+    {id:50,name:'Guisantes',type:'legumbre',prot:5.4,carb:14.5,fat:0.4,kcal:81},
+    {id:51,name:'Quinoa',type:'cereal',prot:14.1,carb:64.2,fat:6.1,kcal:368},
+    {id:52,name:'Mijo',type:'cereal',prot:11.0,carb:72.8,fat:4.2,kcal:378},
+    {id:53,name:'Cebada',type:'cereal',prot:12.5,carb:73.5,fat:2.3,kcal:354},
+    {id:54,name:'Tofu',type:'soja',prot:8.0,carb:1.9,fat:4.8,kcal:76},
+    {id:55,name:'Tempeh',type:'soja',prot:19.0,carb:9.4,fat:11.0,kcal:193},
+    {id:56,name:'Jamón serrano',type:'carne roja',prot:30.9,carb:0.0,fat:15.4,kcal:241},
+    {id:57,name:'Pavo (pechuga)',type:'carne blanca',prot:29.0,carb:0.0,fat:1.7,kcal:135},
+    {id:58,name:'Bacalao',type:'pescado',prot:24.5,carb:0.0,fat:0.7,kcal:105},
+    {id:59,name:'Gambas',type:'marisco',prot:24.0,carb:0.2,fat:0.3,kcal:99},
+    {id:60,name:'Ricotta',type:'lacteo',prot:7.0,carb:3.0,fat:4.3,kcal:100},
+    {id:61,name:'Queso cheddar',type:'lacteo',prot:24.9,carb:1.3,fat:33.1,kcal:403},
+    {id:62,name:'Leche desnatada',type:'lacteo',prot:3.4,carb:5.0,fat:0.1,kcal:35},
+    {id:63,name:'Crema de leche',type:'lacteo',prot:2.0,carb:3.0,fat:35.0,kcal:345},
+    {id:64,name:'Semillas de lino',type:'frutos secos',prot:18.3,carb:28.9,fat:42.2,kcal:534},
+    {id:65,name:'Pistachos',type:'frutos secos',prot:20.6,carb:27.7,fat:45.0,kcal:562},
+{ id:66, name:'Pasta (espagueti) cocida',         type:'cereal',     prot:5.8,  carb:30.6, fat:0.9, kcal:158 }, // :contentReference[oaicite:0]{index=0}
+{ id:67, name:'Pasta integral cocida',            type:'cereal',     prot:5.5,  carb:30.1, fat:1.1, kcal:149 }, // :contentReference[oaicite:1]{index=1}
+{ id:68, name:'Pan integral (100 g)',              type:'cereal',     prot:12.3, carb:43.1, fat:3.5, kcal:254 }, // :contentReference[oaicite:2]{index=2}
+{ id:69, name:'Harina de trigo (blanca)',         type:'cereal',     prot:10.3, carb:76.3, fat:1.5, kcal:364 },
+{ id:70, name:'Aceitunas verdes (curadas)',       type:'verdura',    prot:0.8,  carb:3.8,  fat:15.3, kcal:145 },
+{ id:71, name:'Semillas de girasol',               type:'frutos secos',prot:20.8, carb:20.0, fat:51.5, kcal:584 },
+{ id:72, name:'Sardinas en aceite escurridas',     type:'pescado azul',prot:24.6, carb:0.0,  fat:16.7, kcal:208 },
+{ id:73, name:'Ostras crudas',                     type:'marisco',     prot:9.0,  carb:4.1,  fat:1.5, kcal:68 },
+{ id:74, name:'Pulpo cocido',                      type:'marisco',     prot:14.9, carb:1.0,  fat:1.0, kcal:82 },
+{ id:75, name:'Soja texturizada seca',             type:'soja',        prot:50.0, carb:33.0, fat:1.5, kcal:335 },
+{ id:76, name:'Leche de soja (sin azúcar)',        type:'bebida',      prot:3.6,  carb:5.1,  fat:1.8, kcal:45 },
+{ id:77, name:'Leche de almendra (sin azúcar)',    type:'bebida',      prot:0.4,  carb:0.3,  fat:2.5, kcal:17 },
+{ id:78, name:'Yogur griego natural 0 % MG',       type:'lacteo',      prot:10.0, carb:3.6,  fat:0.3, kcal:59 },
+{ id:79, name:'Chocolate con leche',               type:'chocolate',   prot:7.6,  carb:52.2, fat:31.9,kcal:535 },
+{ id:80, name:'Miel',                              type:'cereal',     prot:0.3,  carb:82.4, fat:0.0, kcal:304 },
+{ id: 97,  name: 'Guisante verde (cocido)',       type: 'legumbre',    prot: 5.4,  carb: 14.5, fat: 0.4,  kcal: 81 },  // USDA
+{ id: 98,  name: 'Espelta (grano)',               type: 'cereal',      prot: 15.0, carb: 70.2, fat: 2.4,  kcal: 338 }, // CIQUAL
+{ id: 99,  name: 'Trigo sarraceno (grano)',       type: 'cereal',      prot: 13.3, carb: 71.5, fat: 3.4,  kcal: 343 }, // USDA
+{ id:100,  name: 'Mijo (grano seco)',             type: 'cereal',      prot: 11.0, carb: 72.8, fat: 4.2,  kcal: 378 }, // USDA
+{ id:101,  name: 'Harina de garbanzo',            type: 'legumbre',    prot: 22.4, carb: 57.8, fat: 6.7,  kcal: 387 }, // USDA
+{ id:102,  name: 'Harina de almendra',            type: 'frutos secos',prot: 21.4, carb: 19.0, fat: 54.3, kcal: 579 }, // USDA
+{ id:103,  name: 'Semillas de calabaza',          type: 'frutos secos',prot: 19.0, carb: 54.5, fat: 45.8, kcal: 559 }, // CIQUAL
+{ id:104,  name: 'Altramuz (garrofón) seco',       type: 'legumbre',    prot: 36.2, carb: 30.2, fat: 5.9,  kcal: 371 }, // USDA
+{ id:105,  name: 'Patata asada (con piel)',       type: 'tubérculo',   prot: 2.5,  carb: 21.0, fat: 0.2,  kcal: 93 },  // CIQUAL
+{ id:106,  name: 'Yogur griego 2% MG',            type: 'lacteo',      prot: 10.0, carb: 4.0,  fat: 2.0,  kcal: 100 }, // USDA
+{ id:107,  name: 'Requesón (cottage cheese)',     type: 'lacteo',      prot: 11.1, carb: 3.4,  fat: 4.3,  kcal: 98 },  // USDA
+{ id:108,  name: 'Queso parmesano',               type: 'lacteo',      prot: 35.8, carb: 3.2,  fat: 25.8, kcal: 431 }, // USDA
+{ id:109,  name: 'Sésamo (semillas)',             type: 'frutos secos',prot: 17.7, carb: 23.5, fat: 49.7, kcal: 573 }, // CIQUAL
+{ id:110,  name: 'Pan de centeno',                type: 'cereal',      prot: 8.5,  carb: 48.3, fat: 3.3,  kcal: 259 }, // USDA
+{ id:111,  name: 'Pan pita integral',             type: 'cereal',      prot: 9.0,  carb: 48.0, fat: 2.5,  kcal: 275 }, // CIQUAL
+{ id:112,  name: 'Té negro infusionado',          type: 'bebida',      prot: 0.1,  carb: 0.0,  fat: 0.0,  kcal: 1   }, // USDA
+{ id:113,  name: 'Kéfir natural',                 type: 'lacteo',      prot: 3.3,  carb: 4.0,  fat: 2.0,  kcal: 49  }, // USDA
+{ id:114,  name: 'Arándanos',                     type: 'fruta',       prot: 0.7,  carb: 14.5, fat: 0.3,  kcal: 57  }, // USDA
+{ id:115,  name: 'Moras',                         type: 'fruta',       prot: 1.4,  carb: 9.6,  fat: 0.5,  kcal: 43  }, // USDA
+{ id:116,  name: 'Mandarina',                     type: 'fruta',       prot: 0.8,  carb: 13.3, fat: 0.3,  kcal: 53  },  // CIQUAL
+{ id:117, name:'Frijol negro (cocido)',         type:'legumbre',    prot:8.9,  carb:23.7, fat:0.5,  kcal:132 },
+{ id:118, name:'Frijol rojo (kidney) cocido',  type:'legumbre',    prot:8.7,  carb:22.8, fat:0.5,  kcal:127 },
+{ id:119, name:'Alubias blancas (cocidas)',     type:'legumbre',    prot:7.3,  carb:20.0, fat:0.6,  kcal:114 },
+{ id:120, name:'Clara de huevo',               type:'huevo',       prot:10.8, carb:0.7,  fat:0.1,  kcal:52  },
+{ id:121, name:'Mantequilla',                  type:'aceite',      prot:0.5,  carb:0.1,  fat:81.1, kcal:717 },
+{ id:122, name:'Aceite de coco',               type:'aceite',      prot:0.0,  carb:0.0,  fat:100.0,kcal:892 },
+{ id:123, name:'Mantequilla de cacahuete',     type:'frutos secos',prot:25.0, carb:20.0, fat:50.0, kcal:588 },
+{ id:124, name:'Mayonesa',                     type:'aceite',      prot:1.0,  carb:0.6,  fat:75.0, kcal:680 },
+{ id:125, name:'Polenta (sémola de maíz)',     type:'cereal',      prot:5.0,  carb:23.0, fat:1.0,  kcal:110 },
+{ id:126, name:'Cuscús integral cocido',       type:'cereal',      prot:3.8,  carb:21.0, fat:0.4,  kcal:112 },
+{ id:127, name:'Arroz integral cocido',        type:'cereal',      prot:2.6,  carb:23.5, fat:1.0,  kcal:111 },
+{ id:128, name:'Calabacín asado',              type:'verdura',     prot:1.2,  carb:3.4,  fat:0.5,  kcal:20  },
+{ id:129, name:'Setas (varios tipos)',         type:'verdura',     prot:3.1,  carb:3.8,  fat:0.2,  kcal:28  },
+{ id:130, name:'Zumo de manzana (natural)',    type:'bebida',      prot:0.1,  carb:11.3, fat:0.0,  kcal:46  },
+{ id:131, name:'Zumo de piña (natural)',       type:'bebida',      prot:0.5,  carb:12.0, fat:0.1,  kcal:53  },
+{ id:132, name:'Vino tinto',                   type:'bebida',      prot:0.1,  carb:2.6,  fat:0.0,  kcal:85  },
+{ id:133, name:'Cerveza',                      type:'bebida',      prot:0.5,  carb:3.6,  fat:0.0,  kcal:43  },
+{ id:134, name:'Jamón cocido',                 type:'carne blanca',prot:15.0, carb:0.6,  fat:3.0,  kcal:100 },
+{ id:135, name:'Panceta ahumada',              type:'carne roja',  prot:14.0, carb:1.0,  fat:45.0, kcal:541 },
+{ id:136, name:'Salchicha de pollo',           type:'carne blanca',prot:12.0, carb:1.5,  fat:12.0, kcal:170 },
+{id:137,name:'Tofu firme',type:'soja',prot:8.1,carb:1.9,fat:4.8,kcal:76},
+{id:138,name:'Espinacas (cocidas)',type:'verdura',prot:3.0,carb:4.5,fat:0.4,kcal:23},
+{id:139,name:'Kéfir bajo en grasa',type:'lacteo',prot:4.2,carb:4.0,fat:1.0,kcal:56},
+{id:140,name:'Mango deshidratado',type:'fruta',prot:2.9,carb:75.6,fat:1.1,kcal:319},
+{id:141,name:'Aceitunas negras',type:'verdura',prot:0.8,carb:6.1,fat:15.3,kcal:145},
+{id:142,name:'Pasta de garbanzo',type:'cereal',prot:22.2,carb:57.6,fat:6.3,kcal:387},
+{id:143,name:'Alubias pintas (cocidas)',type:'legumbre',prot:8.7,carb:22.8,fat:0.5,kcal:127},
+{id:144,name:'Yogur natural griego',type:'lacteo',prot:10.0,carb:3.6,fat:9.0,kcal:133},
+{id:145,name:'Pan de centeno integral',type:'cereal',prot:8.5,carb:48.3,fat:3.3,kcal:259},
+{id:146,name:'Cuscús integral',type:'cereal',prot:3.8,carb:21.0,fat:0.4,kcal:112},
+{id:147,name:'Sémola (cuscús clásico)',type:'cereal',prot:11.7,carb:72.0,fat:1.2,kcal:360},
+{id:148,name:'Miel de caña',type:'cereal',prot:0.3,carb:75.0,fat:0.0,kcal:300},
+{id:149,name:'Trucha arcoíris',type:'pescado',prot:20.8,carb:0.0,fat:7.5,kcal:162},
+{id:150,name:'Carne de bisonte',type:'carne roja',prot:28.0,carb:0.0,fat:2.4,kcal:143}
+
+
+
+
+
+  ];
+  let recipes={},currentId=null;
+  const recipeSelect=document.getElementById('recipe-select'),newBtn=document.getElementById('new-recipe'),editBtn=document.getElementById('edit-recipe'),exportBtn=document.getElementById('export'),exportAllBtn=document.getElementById('export-all'),dropZone=document.getElementById('drop-zone'),tbody=document.querySelector('tbody');
+  newBtn.addEventListener('click',()=>createRecipe(null,true));
+  editBtn.addEventListener('click',renameRecipe);
+  exportBtn.addEventListener('click',exportRecipe);
+  exportAllBtn.addEventListener('click',exportAllRecipes);
+  recipeSelect.addEventListener('change',()=>{
+    currentId=Number(recipeSelect.value);
+    exportBtn.disabled=!currentId;
+    editBtn.disabled=!currentId;
+    exportAllBtn.disabled=Object.keys(recipes).length===0;
+    renderTable();
+  });
+  setupDropZone();populateSidebar();createRecipe('Receta 1',false);
+  function createRecipe(def,ask){
+    let name=def;
+    if(ask){const n=prompt('Nombre de la receta:');if(!n)return;name=n;}
+    const id=Date.now();recipes[id]=[];currentId=id;addOption(id,name);recipeSelect.value=id;exportBtn.disabled=false;editBtn.disabled=false;exportAllBtn.disabled=false;renderTable();}
+  function addOption(id,name){const opt=document.createElement('option');opt.value=id;opt.text=name;recipeSelect.add(opt);}
+  function renameRecipe(){if(!currentId)return;const idx=recipeSelect.selectedIndex;const old=recipeSelect.options[idx].text;const n=prompt('Nuevo nombre de la receta:',old);if(n)recipeSelect.options[idx].text=n;}
+  function populateSidebar(){const list=document.getElementById('ingredients-list');document.getElementById('search').oninput=e=>{const q=e.target.value.toLowerCase();list.innerHTML='';allIngredients.filter(i=>i.name.toLowerCase().includes(q)).forEach(addSidebarItem);} ;list.innerHTML='';allIngredients.forEach(addSidebarItem);}  
+  function addSidebarItem(item){const d=document.createElement('div');d.className='ingredient';d.draggable=true;d.dataset.id=item.id;d.innerHTML=`<span>${iconFor(item.type)}</span><span>${item.name}</span>`;d.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',item.id));document.getElementById('ingredients-list').append(d);}  
+  function setupDropZone(){['dragover','dragenter'].forEach(ev=>dropZone.addEventListener(ev,e=>e.preventDefault()));dropZone.addEventListener('drop',e=>{e.preventDefault();const id=e.dataTransfer.getData('text');if(!currentId){alert('Crea o selecciona');return;}addIngredientToRecipe(id);});}
+  function addIngredientToRecipe(id){const ing=allIngredients.find(i=>i.id==id);recipes[currentId].push({...ing,qty:100});renderTable();}
+  function renderTable(){const items=recipes[currentId]||[];tbody.innerHTML='';resetTotals();items.forEach((it,i)=>{const row=document.createElement('tr');row.innerHTML=`<td>${iconFor(it.type)}</td><td>${it.name}</td><td><input type="number" class="qty" value="${it.qty}" min="1"></td><td class="prot"></td><td class="carb"></td><td class="fat"></td><td class="kcal"></td><td><button class="delete">✕</button></td>`;tbody.append(row);const inp=row.querySelector('.qty'),p=row.querySelector('.prot'),c=row.querySelector('.carb'),f=row.querySelector('.fat'),k=row.querySelector('.kcal'),del=row.querySelector('.delete');const upd=()=>{const q=+inp.value,fac=q/100;p.textContent=(it.prot*fac).toFixed(1);c.textContent=(it.carb*fac).toFixed(1);f.textContent=(it.fat*fac).toFixed(1);k.textContent=Math.round(it.kcal*fac);};inp.oninput=()=>{it.qty=+inp.value;upd();recalcTotals();};del.onclick=()=>{recipes[currentId].splice(i,1);renderTable();};upd();});recalcTotals();}
+  function resetTotals(){window._tot={prot:0,carb:0,fat:0,kcal:0};}
+  function recalcTotals(){resetTotals();Array.from(tbody.children).forEach(r=>{window._tot.prot+=parseFloat(r.querySelector('.prot').textContent)||0;window._tot.carb+=parseFloat(r.querySelector('.carb').textContent)||0;window._tot.fat+=parseFloat(r.querySelector('.fat').textContent)||0;window._tot.kcal+=parseFloat(r.querySelector('.kcal').textContent)||0;});document.getElementById('total-prot').textContent=window._tot.prot.toFixed(1);document.getElementById('total-carb').textContent=window._tot.carb.toFixed(1);document.getElementById('total-fat').textContent=window._tot.fat.toFixed(1);document.getElementById('total-kcal').textContent=window._tot.kcal.toFixed(0);}  
+  function exportRecipe(){if(!currentId)return;exportDataFor([currentId],`receta_${recipeSelect.options[recipeSelect.selectedIndex].text.replace(/\s+/g,'_').toLowerCase()}.csv`);}  
+  function exportAllRecipes(){const ids=Object.keys(recipes).map(n=>Number(n));if(!ids.length)return;exportDataFor(ids,'recetas_all.csv');}
+  function exportDataFor(ids,filename){const header=['id','title','kcal','p','c','f','types','ing'].join(', ');const rows=[header];ids.forEach(id=>{const title=(recipeSelect.querySelector(`option[value=\"${id}\"]`)||{}).text||'';resetTotals();recipes[id].forEach(it=>{window._tot.prot+=it.prot*(it.qty/100);window._tot.carb+=it.carb*(it.qty/100);window._tot.fat+=it.fat*(it.qty/100);window._tot.kcal+=it.kcal*(it.qty/100);});const types=[...new Set(recipes[id].map(it=>it.type))].join('|');const ing=`"${recipes[id].map(it=>`${it.name}(${it.qty}g)`).join(', ')}"`;rows.push([id,title,Math.round(window._tot.kcal),window._tot.prot.toFixed(1),window._tot.carb.toFixed(1),window._tot.fat.toFixed(1),types,ing].join(','));});const blob=new Blob([rows.join('\n')],{type:'text/csv'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=filename;link.click();}
+ });
+</script>
+</body>
+</html>
